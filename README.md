@@ -84,6 +84,11 @@ the crop step solves. So upgrading the vehicle detector changes little for ALPR 
 rates — any module that answers "where are the cars?" works. Upgrade it for general
 detection speed/accuracy if you like, but not expecting more plate reads from it.
 
+> **Requires an ObjectDetection module.** The fallback calls `vision/detection`, so a
+> general object-detection module (e.g. the default `ObjectDetectionYOLOv5-6.2`) must be
+> installed and running in CodeProject.AI. If it's disabled or unavailable, the fallback
+> finds no vehicles and the module behaves like the stock full-frame-only ALPR.
+
 ---
 
 ## 2. PaddleOCR GPU on Linux / CUDA 12
@@ -101,6 +106,13 @@ driver, cuDNN 8.9, Python 3.8).
 
 > ⚠️ **Do not** upgrade to PaddlePaddle 3.x to get a newer CUDA build — it drops
 > Python 3.8 and breaks PaddleOCR 2.7.0.3. Stay on `2.6.2.post120` + `paddleocr==2.7.0.3`.
+
+### GPU-less or mixed hosts
+`InstallGPU: true` is safe on Linux machines **without** a capable GPU. The adapter uses
+`use_gpu = enable_GPU and can_use_GPU`, and `can_use_GPU` is false unless a suitable
+NVIDIA GPU is present (it also checks compute capability ≥ 6 and cuDNN), so ALPR falls
+back to CPU automatically — no need to flip `InstallGPU` back to `false`. These changes
+are scoped to Linux x86_64 + CUDA 12; Windows, macOS, and CUDA 11 installs are untouched.
 
 ### Network caveat (China-hosted wheel)
 The `.post120` wheel is hosted on `paddlepaddle.org.cn` / `bcebos.com`, which some
