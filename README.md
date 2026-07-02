@@ -75,6 +75,15 @@ passes, so a fallback read is noticeably slower than a direct hit (order of ~1s 
 ~150ms on our hardware). If throughput matters on a busy scene, lower `max_vehicle_crops`
 or drop the second (lower-region) crop.
 
+### Which object detector? (YOLOv5 vs YOLOv8 vs YOLO11)
+The fallback uses whatever CodeProject.AI object-detection module is installed
+(default: `ObjectDetectionYOLOv5-6.2`) via `vision/detection`, purely to find vehicles.
+The detector *version* is **not the bottleneck**: locating a *car* in a scene is easy for
+any YOLO generation (v5 / v8 / v11). The hard part is locating the small *plate*, which
+the crop step solves. So upgrading the vehicle detector changes little for ALPR read
+rates — any module that answers "where are the cars?" works. Upgrade it for general
+detection speed/accuracy if you like, but not expecting more plate reads from it.
+
 ---
 
 ## 2. PaddleOCR GPU on Linux / CUDA 12
