@@ -157,6 +157,21 @@ if [ "$os" = "linux" ] && [ "$architecture" == "x86_64" ]; then
     fi
 fi
 
+# Offline / restricted-network fallback for the CUDA-12 PaddlePaddle GPU wheel.
+# requirements.linux.cuda12.txt installs paddlepaddle-gpu from Paddle's (China-hosted)
+# index; where that host is unreachable the install gets no CUDA build and ALPR runs
+# on CPU. As a fallback, drop the matching wheel in this module's `wheels/` folder and
+# it is installed from there. See wheels/README.md.
+if [ "$os" = "linux" ] && [ "$architecture" == "x86_64" ]; then
+    if ! "$venvPythonCmdPath" -m pip show paddlepaddle-gpu >/dev/null 2>&1 && \
+       ! "$venvPythonCmdPath" -m pip show paddlepaddle    >/dev/null 2>&1; then
+        localWheel=$(ls "${moduleDirPath}/wheels/"paddlepaddle*.whl 2>/dev/null | head -1)
+        if [ -n "$localWheel" ]; then
+            installPythonPackagesByName "$localWheel" "PaddlePaddle GPU (local wheel, offline)"
+        fi
+    fi
+fi
+
 if [ "$os" = "macos" ]; then
 
     # The Numpy Debacle, 2024
