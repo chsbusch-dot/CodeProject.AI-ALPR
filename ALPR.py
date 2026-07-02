@@ -20,6 +20,13 @@ from paddleocr import PaddleOCR
 debug_log       = False
 no_plate_found  = 'Characters Not Found'
 
+# Fallback for wide scenes: CodeProject.AI's plate detector is run at YOLO
+# size=640, so very small plates in full 4K frames can disappear. If the
+# normal full-frame pass misses, crop detected vehicles and try again.
+vehicle_labels     = {"car", "truck", "bus", "motorcycle", "motorbike"}
+vehicle_confidence = 0.25
+max_vehicle_crops  = 8
+
 # Globals
 ocr                  = None
 previous_label       = None
@@ -54,7 +61,174 @@ def init_detect_platenumber(opts: Options) -> None:
     remove_spaces        = opts.remove_spaces and not opts.OCR_training_dataset
     cropped_plate_dir    = opts.cropped_plate_dir
     save_cropped_plate   = opts.save_cropped_plate
-    
+
+
+async def call_image_api(module_runner: ModuleRunner, route: str, image: Image,
+                         data: dict) -> Tuple[JSON, int]:
+
+    with io.BytesIO() as image_buffer:
+        image.save(image_buffer, format='JPEG') # 'PNG' - slow
+        image_buffer.seek(0)
+        image_data = ('image.jpeg', image_buffer, 'image/jpeg')
+
+        start_time = time.perf_counter()
+        response = await module_runner.call_api(route,
+                                                files={ "image": image_data },
+                                                data=data)
+        inferenceMs = int((time.perf_counter() - start_time) * 1000)
+
+    return response, inferenceMs
+
+
+def clipped_rect(left: float, top: float, right: float, bottom: float,
+                 image_width: int, image_height: int) -> Rect:
+
+    left   = max(0, min(image_width,  int(left)))
+    top    = max(0, min(image_height, int(top)))
+    right  = max(0, min(image_width,  int(right)))
+    bottom = max(0, min(image_height, int(bottom)))
+
+    return Rect(left, top, right, bottom)
+
+
+def rect_area(rect: Rect) -> int:
+    return max(0, rect.right - rect.left) * max(0, rect.bottom - rect.top)
+
+
+def detection_rect(detection: dict, image_width: int, image_height: int,
+                   pad_x: float = 0.08, pad_y: float = 0.08) -> Rect:
+
+    left   = float(detection["x_min"])
+    top    = float(detection["y_min"])
+    right  = float(detection["x_max"])
+    bottom = float(detection["y_max"])
+    width  = right - left
+    height = bottom - top
+
+    return clipped_rect(left   - width  * pad_x,
+                        top    - height * pad_y,
+                        right  + width  * pad_x,
+                        bottom + height * pad_y,
+                        image_width, image_height)
+
+
+def vehicle_search_regions(vehicle: dict, image_width: int,
+                           image_height: int) -> list:
+
+    full_rect = detection_rect(vehicle, image_width, image_height)
+    regions = [full_rect]
+
+    vehicle_height = float(vehicle["y_max"]) - float(vehicle["y_min"])
+    lower_top = float(vehicle["y_min"]) + vehicle_height * 0.35
+    lower_rect = clipped_rect(float(vehicle["x_min"]) - vehicle_height * 0.08,
+                              lower_top,
+                              float(vehicle["x_max"]) + vehicle_height * 0.08,
+                              float(vehicle["y_max"]) + vehicle_height * 0.08,
+                              image_width, image_height)
+
+    if rect_area(lower_rect) > 0:
+        regions.append(lower_rect)
+
+    return regions
+
+
+def translate_plate_detection(plate_detection: dict, crop_rect: Rect,
+                              image_width: int, image_height: int) -> dict:
+
+    translated = dict(plate_detection)
+    translated["x_min"] = max(0, min(image_width,  int(plate_detection["x_min"]) + crop_rect.left))
+    translated["y_min"] = max(0, min(image_height, int(plate_detection["y_min"]) + crop_rect.top))
+    translated["x_max"] = max(0, min(image_width,  int(plate_detection["x_max"]) + crop_rect.left))
+    translated["y_max"] = max(0, min(image_height, int(plate_detection["y_max"]) + crop_rect.top))
+    return translated
+
+
+def rect_iou(first: dict, second: dict) -> float:
+
+    left   = max(first["x_min"], second["x_min"])
+    top    = max(first["y_min"], second["y_min"])
+    right  = min(first["x_max"], second["x_max"])
+    bottom = min(first["y_max"], second["y_max"])
+
+    intersection = max(0, right - left) * max(0, bottom - top)
+    if intersection == 0:
+        return 0
+
+    first_area  = max(0, first["x_max"] - first["x_min"]) * max(0, first["y_max"] - first["y_min"])
+    second_area = max(0, second["x_max"] - second["x_min"]) * max(0, second["y_max"] - second["y_min"])
+    union = first_area + second_area - intersection
+
+    return intersection / union if union else 0
+
+
+def dedupe_plate_predictions(predictions: list) -> list:
+
+    predictions = sorted(predictions, key=lambda item: item.get("confidence", 0), reverse=True)
+    deduped = []
+
+    for prediction in predictions:
+        if all(rect_iou(prediction, existing) < 0.35 for existing in deduped):
+            deduped.append(prediction)
+
+    return deduped
+
+
+async def detect_plates_in_vehicle_crops(module_runner: ModuleRunner,
+                                         opts: Options,
+                                         pillow_image: Image) -> Tuple[list, int]:
+
+    inferenceMs = 0
+    image_width, image_height = pillow_image.size
+
+    detect_vehicle_response, vehicleMs = await call_image_api(module_runner,
+                                                              "vision/detection",
+                                                              pillow_image,
+                                                              {"min_confidence": vehicle_confidence})
+    inferenceMs += vehicleMs
+
+    if not "success" in detect_vehicle_response or not detect_vehicle_response["success"]:
+        return [], inferenceMs
+
+    vehicles = []
+    for prediction in detect_vehicle_response.get("predictions", []):
+        label = str(prediction.get("label", "")).lower()
+        if label in vehicle_labels:
+            vehicles.append(prediction)
+
+    vehicles = sorted(vehicles, key=lambda item: item.get("confidence", 0), reverse=True)
+    vehicles = vehicles[:max_vehicle_crops]
+
+    plate_predictions = []
+
+    for vehicle in vehicles:
+        for crop_rect in vehicle_search_regions(vehicle, image_width, image_height):
+            if rect_area(crop_rect) <= 0:
+                continue
+
+            crop = pillow_image.crop((crop_rect.left, crop_rect.top,
+                                      crop_rect.right, crop_rect.bottom))
+            detect_plate_response, plateMs = await call_image_api(module_runner,
+                                                                  "vision/custom/license-plate",
+                                                                  crop,
+                                                                  {"min_confidence": opts.plate_confidence})
+            inferenceMs += plateMs
+
+            if not "success" in detect_plate_response or not detect_plate_response["success"]:
+                continue
+
+            crop_predictions = detect_plate_response.get("predictions", [])
+            if crop_predictions:
+                for plate_detection in crop_predictions:
+                    plate_predictions.append(translate_plate_detection(plate_detection,
+                                                                       crop_rect,
+                                                                       image_width,
+                                                                       image_height))
+                break
+
+    plate_predictions = dedupe_plate_predictions(plate_predictions)
+
+    return plate_predictions, inferenceMs
+
 
 
 async def detect_platenumber(module_runner: ModuleRunner, opts: Options, image: Image) -> JSON:
@@ -73,37 +247,38 @@ async def detect_platenumber(module_runner: ModuleRunner, opts: Options, image: 
 
     inferenceMs: int = 0
 
-    # Convert to format suitable for a POST
-    with io.BytesIO() as image_buffer :
-        pillow_image.save(image_buffer, format='JPEG') # 'PNG' - slow
-        image_buffer.seek(0)
-    
-        # Look for plates
-        try:
-            image_data = ('image.jpeg', image_buffer, 'image/jpeg')
+    # Look for plates in the full image first. If the plate model misses in a
+    # wide scene, fall back to vehicle crops so tiny plates survive YOLO resize.
+    try:
+        detect_plate_response, plateMs = await call_image_api(module_runner,
+                                                              "vision/custom/license-plate",
+                                                              pillow_image,
+                                                              {"min_confidence": opts.plate_confidence})
+        inferenceMs += plateMs
 
-            start_time = time.perf_counter()
-            detect_plate_response = await module_runner.call_api("vision/custom/license-plate",
-                                                                 files={ "image": image_data },
-                                                                 data={"min_confidence": opts.plate_confidence})
-            inferenceMs += int((time.perf_counter() - start_time) * 1000)
+        if not "success" in detect_plate_response or not detect_plate_response["success"]:
+            message = detect_plate_response["error"] if "error" in detect_plate_response \
+                                                     else "Unable to find plate"
+            return { "error": message, "inferenceMs": inferenceMs }
 
-            if not "success" in detect_plate_response or not detect_plate_response["success"]:
-                message = detect_plate_response["error"] if "error" in detect_plate_response \
-                                                         else "Unable to find plate"
-                return { "error": message, "inferenceMs": inferenceMs }
-
-            # Note: we will only get plates that have at least opts.plate_confidence 
-            # confidence. 
-            if not "predictions" in detect_plate_response or not detect_plate_response["predictions"]:
+        # Note: we will only get plates that have at least opts.plate_confidence
+        # confidence.
+        if not "predictions" in detect_plate_response or not detect_plate_response["predictions"]:
+            fallback_predictions, fallbackMs = await detect_plates_in_vehicle_crops(module_runner,
+                                                                                   opts,
+                                                                                   pillow_image)
+            inferenceMs += fallbackMs
+            if not fallback_predictions:
                 return { "predictions": [], "inferenceMs": inferenceMs }
 
-        except Exception as ex:
-            await module_runner.report_error_async(ex, __file__)
-            return { 
-                "error": f"Error trying to locate license plate ({ex.__class__.__name__})",
-                "inferenceMs": inferenceMs
-            }
+            detect_plate_response["predictions"] = fallback_predictions
+
+    except Exception as ex:
+        await module_runner.report_error_async(ex, __file__)
+        return {
+            "error": f"Error trying to locate license plate ({ex.__class__.__name__})",
+            "inferenceMs": inferenceMs
+        }
 
     # We have a plate (or plates) detected, so let's prep the original image for some work
     numpy_image = np.array(pillow_image)
