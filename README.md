@@ -34,6 +34,8 @@ the **`enhanced`** branch for both, or cherry-pick a single branch
 
 ## 1. Vehicle-crop fallback for wide / high-resolution scenes
 
+![The same frame: the full 4K image finds no plate; cropping the detected vehicle localizes and reads it](docs/wide-scene-fallback.png)
+
 ### The problem
 The stock module sends the **whole frame** to a YOLO plate-detector that runs at
 **`size=640`**. On a wide or 4K camera, a license plate is only a small part of the
@@ -65,7 +67,7 @@ plates still take the fast original path — the fallback only runs on a miss.
 |---|---|---|
 | `vehicle_labels` | car, truck, bus, motorcycle | which object classes to crop |
 | `vehicle_confidence` | `0.25` | min confidence to treat a detection as a vehicle |
-| `max_vehicle_crops` | `8` | cap on vehicles cropped per frame (bounds worst-case latency) |
+| `max_vehicle_crops` | `3` | cap on vehicles cropped per frame (bounds worst-case latency) |
 
 ### Cost
 Each *miss* now adds one object-detection pass plus up to `max_vehicle_crops` × 2 plate
