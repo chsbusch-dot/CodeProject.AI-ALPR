@@ -11,6 +11,25 @@ It adds two independent fixes to the stock module:
 
 Everything else (models, API, PaddleOCR pipeline, upstream dev/build workflow) is unchanged.
 
+## Compatibility
+
+Tested against:
+
+| Component | Version |
+|---|---|
+| CodeProject.AI Server | 2.9.7 |
+| ALPR module (base) | 3.3.4 |
+| OS / arch | Ubuntu Linux, x86_64 |
+| Python | 3.8 |
+| PaddleOCR | 2.7.0.3 |
+| PaddlePaddle (GPU) | 2.6.2.post120 (CUDA 12) |
+| GPU | NVIDIA, driver CUDA 12.0–12.7, cuDNN 8.9 |
+
+The two fixes are independent: the **vehicle-crop fallback** is platform-agnostic (any
+OS / GPU / CPU), and the **GPU fix** applies to Linux x86_64 + NVIDIA CUDA 12. Install
+the **`enhanced`** branch for both, or cherry-pick a single branch
+(`alpr-vehicle-crop-fallback` or `cuda12-paddle-gpu`).
+
 ---
 
 ## 1. Vehicle-crop fallback for wide / high-resolution scenes
