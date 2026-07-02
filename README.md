@@ -11,6 +11,23 @@ It adds two independent fixes to the stock module:
 
 Everything else (models, API, PaddleOCR pipeline, upstream dev/build workflow) is unchanged.
 
+## How this relates to MikeLud's YOLO11 ALPR module
+
+MikeLud's newer [License Plate Recognition (YOLO11) module](https://github.com/MikeLud/MikeLud-CodeProject.AI-Modules)
+already has vehicle detection + cropping built in (`ENABLE_VEHICLE_DETECTION`) and is the
+recommended forward path for new setups. This fork **does not try to replace it** — it
+targets people staying on the stock **PaddleOCR** module, where two gaps remain:
+
+- **Fix #1 (vehicle-crop fallback)** is the same *technique* MikeLud already uses,
+  **backported** to the PaddleOCR module — mainly useful if you're not migrating.
+- **Fix #2 (GPU on Linux) is the real gap:** *no* CodeProject.AI ALPR module — the stock
+  PaddleOCR one **or** the YOLO11 one — currently runs on GPU on **Linux** (the YOLO11
+  module uses `onnxruntime-directml`, i.e. Windows/DirectML + Apple/MPS only). So on a
+  **Linux + NVIDIA** box this fork is currently the only way to get plate cropping **and**
+  GPU acceleration together.
+
+On Windows, or if you don't need Linux GPU, prefer MikeLud's YOLO11 module.
+
 ## Compatibility
 
 Tested against:
