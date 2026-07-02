@@ -2,7 +2,15 @@
 
 numpy==1.23.3                   # Installing NumPy, a package for scientific computing
 
-paddlepaddle-gpu                # Installing PaddlePaddle, Parallel Distributed Deep Learning
+# PaddlePaddle GPU build for CUDA 12.x (runs on CUDA 12.0-12.7 drivers via minor-version
+# forward compatibility). PyPI's paddlepaddle-gpu only ships CUDA<=11.7 builds, so the
+# bare requirement silently gets a non-CUDA-12 build (or nothing) and ALPR falls back to
+# CPU. The CUDA-12 (.post120) wheel lives only on Paddle's own package index, added below.
+# NOTE: paddlepaddle.org.cn / bcebos are China-hosted; on networks that cannot reach them,
+# fetch the wheel elsewhere and `pip install` the local .whl (see README GPU notes).
+# Do NOT jump to Paddle 3.x here: it drops Python 3.8 and breaks PaddleOCR 2.7.0.3.
+--extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu120/
+paddlepaddle-gpu==2.6.2.post120 # PaddlePaddle GPU (CUDA 12), Parallel Distributed Deep Learning
 paddleocr==2.7.0.3              # Installing PaddleOCR, the OCR toolkit based on PaddlePaddle
 
 imutils                         # Installing imutils, the image utilities library

@@ -146,6 +146,17 @@ if [ "${moduleInstallErrors}" = "" ] && [ "$os" = "linux" ] && [ "$architecture"
     fi
 fi
 
+# PaddlePaddle (CUDA) dlopens the UNVERSIONED libcudnn.so, but Ubuntu's cuDNN package
+# only ships libcudnn.so.8. Without this link Paddle fails at import with
+# "PreconditionNotMetError: Cannot load cudnn shared library". Create it if missing.
+if [ "$os" = "linux" ] && [ "$architecture" == "x86_64" ]; then
+    if [ -f /usr/lib/x86_64-linux-gnu/libcudnn.so.8 ] && [ ! -e /usr/lib/x86_64-linux-gnu/libcudnn.so ]; then
+        write "Linking libcudnn.so -> libcudnn.so.8 for PaddlePaddle..." $color_info
+        sudo ln -sf /usr/lib/x86_64-linux-gnu/libcudnn.so.8 /usr/lib/x86_64-linux-gnu/libcudnn.so >/dev/null 2>/dev/null
+        writeLine "Done" $color_success
+    fi
+fi
+
 if [ "$os" = "macos" ]; then
 
     # The Numpy Debacle, 2024
