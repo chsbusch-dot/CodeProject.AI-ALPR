@@ -25,7 +25,7 @@ no_plate_found  = 'Characters Not Found'
 # normal full-frame pass misses, crop detected vehicles and try again.
 vehicle_labels     = {"car", "truck", "bus", "motorcycle", "motorbike"}
 vehicle_confidence = 0.25
-max_vehicle_crops  = 8
+max_vehicle_crops  = 3   # cap crops per frame; each miss fans out to this many x2 plate passes
 
 # Globals
 ocr                  = None
