@@ -1,3 +1,8 @@
+> **This is a fork of [codeproject/CodeProject.AI-ALPR](https://github.com/codeproject/CodeProject.AI-ALPR)** (the PaddleOCR "License Plate Reader") — for the original, go there. This fork adds **PaddleOCR GPU on Linux/CUDA 12** ([upstream PR #25](https://github.com/codeproject/CodeProject.AI-ALPR/pull/25)) and a **vehicle-crop fallback** ([upstream PR #26](https://github.com/codeproject/CodeProject.AI-ALPR/pull/26)).
+> Comparing the CodeProject.AI ALPR options? See the guide in **[ALPRFast](https://github.com/chsbusch-dot/CodeProject.AI-ALPRFast#which-codeprojectai-alpr-module-should-i-use)**.
+
+---
+
 # ALPR Module for CodeProject.AI Server — enhanced fork
 
 This is a fork of the official [CodeProject.AI ALPR module](https://github.com/codeproject/CodeProject.AI-ALPR)
